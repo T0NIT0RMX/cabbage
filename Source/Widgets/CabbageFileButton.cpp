@@ -51,8 +51,8 @@ void CabbageFileButton::buttonClicked (Button* button)
 
         if (fc.browseForFileToOpen())
         {
-            owner->sendChannelStringDataToCsound (getChannel(), returnValidPath (fc.getResult()));
-            CabbageWidgetData::setStringProp (widgetData, CabbageIdentifierIds::file, returnValidPath (fc.getResult()));
+            owner->sendChannelStringDataToCsound (getChannel(), fc.getResult().getFullPathName());
+            CabbageWidgetData::setStringProp (widgetData, CabbageIdentifierIds::file, fc.getResult().getFullPathName());
             //owner->refreshComboBoxContents();
         }
 
@@ -66,8 +66,8 @@ void CabbageFileButton::buttonClicked (Button* button)
 
         if (fc.browseForFileToSave(true))
         {
-            owner->sendChannelStringDataToCsound (getChannel(), returnValidPath (fc.getResult()));
-            CabbageWidgetData::setStringProp (widgetData, CabbageIdentifierIds::file, returnValidPath (fc.getResult()));
+            owner->sendChannelStringDataToCsound (getChannel(), fc.getResult().getFullPathName());
+            CabbageWidgetData::setStringProp (widgetData, CabbageIdentifierIds::file, fc.getResult().getFullPathName());
             //owner->refreshComboBoxContents();
         }
 

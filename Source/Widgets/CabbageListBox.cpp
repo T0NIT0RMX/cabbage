@@ -141,7 +141,7 @@ void CabbageListBox::addItemsToListbox (ValueTree wData, bool refreshedFromDisk)
 
         filetype = CabbageWidgetData::getStringProp (wData, "filetype");
         pluginDir.findChildFiles (dirFiles, 2, false, filetype);
-        stringItems.add ("Select..");
+        //stringItems.add ("Select..");
 
         for (int i = 0; i < dirFiles.size(); ++i)
             folderFiles.add (dirFiles[i]);

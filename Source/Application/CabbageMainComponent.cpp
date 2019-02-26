@@ -21,16 +21,22 @@
 #include "CabbageDocumentWindow.h"
 #include "../Utilities/CabbageNewProjectWindow.h"
 #include "../Utilities/CabbageSSHFileBrowser.h"
-#include "../Audio/Graph/PluginWindow.h"
+#include "../Audio/UI/PluginWindow.h"
+#include "../Audio/Filters/InternalFilters.h"
+#include "../Utilities/CabbageStrings.h"
 
 //==============================================================================
 CabbageMainComponent::CabbageMainComponent (CabbageDocumentWindow* owner, CabbageSettings* settings)
     : cabbageSettings (settings),
       owner (owner),
       factory (this),
-      tooltipWindow (this, 300),
-      cycleTabsButton ("...")
+      //tooltipWindow (this, 300),
+      cycleTabsButton ("..."),
+	  lookAndFeel(new CabbageIDELookAndFeel()),
+      resizerBar(settings->getValueTree(), this)
 {
+
+
 
     cycleTabsButton.setColour (TextButton::ColourIds::buttonColourId, Colour (100, 100, 100));
     getLookAndFeel().setColour (TooltipWindow::ColourIds::backgroundColourId, Colours::whitesmoke);
@@ -39,25 +45,50 @@ CabbageMainComponent::CabbageMainComponent (CabbageDocumentWindow* owner, Cabbag
     setSize (1200, 800);
 
     bgImage = createBackground();
-    audioGraphWindow = new AudioGraphDocumentWindow ("Cabbage Patcher", Colours::white);
-    audioGraphWindow->setVisible (false);
+	formatManager.addDefaultFormats();
+	
+	formatManager.addFormat(new InternalPluginFormat());
+
+    filterGraphWindow = new FilterGraphDocumentWindow("FilterGraph", Colour(200, 200, 200), this);
+    filterGraphWindow->setVisible (false);
+
 
     addAndMakeVisible (toolbar);
+	factory.setIconsPath(cabbageSettings->getUserSettings()->getValue("CustomIconsDir"));
     toolbar.addDefaultItems (factory);
     propertyPanel->addChangeListener (this);
     factory.combo->getCombo().addListener (this);
     cycleTabsButton.setSize (50, 28);
     cycleTabsButton.addListener (this);
-    setLookAndFeelColours();
-    createAudioGraph(); //set up graph even though no file is selected. Allows users to change audio devices from the get-go..
-	currentPluginEditor = nullptr;
+    
+
+    createFilterGraph(); //set up graph even though no file is selected. Allows users to change audio devices from the get-go..
+	
+	reloadAudioDeviceState();
+
+	fileList.setDirectory(getCurrentCsdFile().getParentDirectory(), true, true);
+	directoryThread.startThread(1);
+
+	fileTree.addListener(this);
+
+	fileTree.setColour(TreeView::backgroundColourId, Colours::grey);
+	addAndMakeVisible(fileTree);
+    
+    if(cabbageSettings->getUserSettings()->getIntValue("ShowFileBrowser")==0)
+    {
+        resizerBar.setVisible(false);
+        resizerBarCurrentXPos = 0;
+        resized();
+    }
+    
+    addAndMakeVisible(resizerBar);
+    resizerBar.addMouseListener(this, true);
+	setLookAndFeelColours();
 }
 
 CabbageMainComponent::~CabbageMainComponent()
 {
     editorAndConsole.clear();
-	graphComponent->nodes.clear();// = nullptr;
-    audioGraph = nullptr;
     setLookAndFeel(nullptr);
 
     if (tempFile.existsAsFile())
@@ -70,14 +101,61 @@ void CabbageMainComponent::paint (Graphics& g)
 {
     if (editorAndConsole.size() == 0)
         g.drawImage (bgImage, getLocalBounds().toFloat());
-    else
-        g.fillAll ( CabbageSettings::getColourFromValueTree (cabbageSettings->valueTree, CabbageColourIds::lineNumberBackground, Colour (50, 50, 50)));
-
+	else
+	{
+		g.fillAll(CabbageSettings::getColourFromValueTree(cabbageSettings->valueTree, CabbageColourIds::fileTabBar, Colour(50, 50, 50)));
+	}
 }
 
+//===============================================================================================================
+void CabbageMainComponent::exportTheme()
+{
+	FileChooser fc("Export theme XML", cabbageSettings->getMostRecentFile(0).getParentDirectory(), "*.xml", CabbageUtilities::shouldUseNativeBrowser());
+
+	if (fc.browseForFileToSave(true))
+	{
+		//doing this manually as the settings file fails some XML tests...
+		File themeFile(fc.getResult());
+		StringArray theme;
+		String xmlHeader = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PROPERTIES>";
+		theme.addLines(xmlHeader);
+		const StringArray colourIDStrings = CabbageStrings::getColourIDStrings();
+
+		for (int i = 0; i < colourIDStrings.size(); i++)
+		{
+			const auto colourValue = cabbageSettings->getValueTree().getChildWithName("Colours").getProperty(colourIDStrings[i]);
+			theme.add("<VALUE name=\"Colours_" + colourIDStrings[i] + "\" val=\"" + colourValue.toString() + "\"/>");
+		}
+		
+		theme.add("</PROPERTIES>");
+		themeFile.replaceWithText(theme.joinIntoString("\n"));
+	}
+}
+
+void CabbageMainComponent::importTheme()
+{
+	FileChooser fc("Open theme XML", cabbageSettings->getMostRecentFile(0).getParentDirectory(), "*.xml", CabbageUtilities::shouldUseNativeBrowser());
+
+	if (fc.browseForFileToOpen())
+	{
+
+		XmlDocument myDocument(fc.getResult());
+		std::unique_ptr<XmlElement> myElement(myDocument.getDocumentElement());
+
+		forEachXmlChildElement(*myElement, e)
+		{
+			cabbageSettings->setProperty(e->getStringAttribute("name"), e->getStringAttribute("val"));	
+		}
+		
+		cabbageSettings->setProperty("CustomIconsDir", fc.getResult().getParentDirectory().getFullPathName());
+	}
+}
+
+
+
+//=====================================================================================================================
 void CabbageMainComponent::setLookAndFeelColours()
 {
-    lookAndFeel = new CabbageIDELookAndFeel();
     lookAndFeel->setColour (Slider::ColourIds::thumbColourId, Colour (110, 247, 0));
     lookAndFeel->setColour (ScrollBar::backgroundColourId, Colour (70, 70, 70));
     toolbar.setColour (Toolbar::backgroundColourId, CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::menuBarBackground, Colour (50, 50, 50)));
@@ -87,12 +165,21 @@ void CabbageMainComponent::setLookAndFeelColours()
     lookAndFeel->refreshLookAndFeel (cabbageSettings->getValueTree());
     lookAndFeelChanged();
     toolbar.repaint();
+	fileTree.setColour(FileTreeComponent::backgroundColourId, CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::codeBackground, Colour(50, 50, 50)).darker());
+    fileTree.setColour(FileTreeComponent::textColourId, CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::identifierLiteral, Colour(50, 50, 50)));
+	fileTree.setColour(FileTreeComponent::highlightColourId, Colours::whitesmoke);
+    fileTree.setColour(FileTreeComponent::selectedItemBackgroundColourId, Colours::whitesmoke);
+	fileTree.repaint();
+	resized();
+
 }
 //==============================================================================
 void CabbageMainComponent::buttonClicked (Button* button)
 {
     if (FileTab* tabButton = dynamic_cast<FileTab*> (button))
+    {
         handleFileTab (tabButton);
+    }
     else if (ToolbarButton* toolbarButton = dynamic_cast<ToolbarButton*> (button))
         handleToolbarButtons (toolbarButton);
     else if (DrawableButton* drawableButton = dynamic_cast<DrawableButton*> (button))
@@ -116,11 +203,37 @@ void CabbageMainComponent::buttonClicked (Button* button)
             setCurrentCsdFile (fileTabs[fileTabs.size() - 1]->getFile());
         }
     }
+    
+    if(fileTree.isVisible())
+    {
+        StringArray files;
+        for ( int i = 0 ; i < fileTabs.size() ; i++)
+            if (fileTabs[i]->isVisible() == false)
+            {
+                files.add(fileTabs[i]->getFile().getFullPathName());
+                
+                //CabbageUtilities::debug(fileTabs[i]->getFile().getFullPathName());
+            }
+        
+        const int result = files.indexOf(getCurrentCsdFile().getFullPathName()) + 1;
+        
+        if ( result > 0 )
+        {
+            fileTabs.move (result - 1, fileTabs.size() - 1);
+            editorAndConsole.move (result - 1, fileTabs.size() - 1);
+            arrangeFileTabs();
+            fileTabs[fileTabs.size() - 1]->setToggleState (true, sendNotification);
+            setCurrentCsdFile (fileTabs[fileTabs.size() - 1]->getFile());
+        }
+        
+        fileTree.setSelectedFile(getCurrentCsdFile());
+    }
+    
+    
 }
 
 void CabbageMainComponent::handleFileTab (FileTab* tabButton, bool increment)
 {
-
     if (increment && tabButton == nullptr)
     {
         currentFileIndex = (currentFileIndex  < fileTabs.size() - 1 ? currentFileIndex + 1 : 0);
@@ -132,7 +245,7 @@ void CabbageMainComponent::handleFileTab (FileTab* tabButton, bool increment)
     editorAndConsole[currentFileIndex]->toFront (true);
     cabbageSettings->setProperty ("MostRecentFile", fileTabs[currentFileIndex]->getFile().getFullPathName());
 
-
+    
     if (CabbageDocumentWindow* docWindow = this->findParentComponentOfClass<CabbageDocumentWindow>())
     {
         docWindow->setName (fileTabs[currentFileIndex]->getFile().getFullPathName());
@@ -166,6 +279,12 @@ void CabbageMainComponent::handleFileTab (FileTab* tabButton, bool increment)
         this->arrangeFileTabs();
     }
 
+
+//    if( fileList.contains(fileTabs[currentFileIndex]->getFile()))
+//       jassertfalse;
+//    fileTree.setSelectedFile(fileTabs[currentFileIndex]->getFile());
+//    fileTree.repaint();
+    fileTree.refresh();
 
 }
 
@@ -251,9 +370,9 @@ void CabbageMainComponent::handleToolbarButtons (ToolbarButton* toolbarButton)
     else if (toolbarButton->getName() == "togglePlay")
     {
         if (toolbarButton->getToggleState())
-            this->startAudioGraph();
+            this->startFilterGraph();
         else
-            this->stopAudioGraph();
+            this->stopFilterGraph();
     }
 }
 
@@ -283,11 +402,17 @@ void CabbageMainComponent::handleFileTabs (DrawableButton* drawableButton)
             const String filename = tabButton->getFilename();
             AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
 
-            if (AudioProcessorGraph::Node::Ptr f = audioGraph->graph.getNodeForId (nodeId))
+            if (AudioProcessorGraph::Node::Ptr f = getFilterGraph()->graph.getNodeForId (nodeId))
             {
-                if (auto f = audioGraph->graph.getNodeForId (nodeId))
-                    if (auto* w = audioGraph->getOrCreateWindowFor (f, PluginWindow::Type::normal))
+                if (auto f = getFilterGraph()->graph.getNodeForId (nodeId))
+                    if (auto* w = getFilterGraph()->getOrCreateWindowFor (f, PluginWindow::Type::normal))
+                    {
+                        CabbagePluginProcessor* cabbagePlugin = getCabbagePluginProcessor();
+                        String pluginName = cabbagePlugin->getPluginName();
+                        w->setName (pluginName.length() > 0 ? pluginName : "Plugin has no name?");
                         w->toFront (true);
+                        w->setVisible (true);
+                    }
             }
 
         }
@@ -295,13 +420,24 @@ void CabbageMainComponent::handleFileTabs (DrawableButton* drawableButton)
     }
     else if (drawableButton->getName() == "editGUIButton")
     {
-        this->saveDocument();
-        setEditMode (true);
-        if(FileTab* tabButton = drawableButton->findParentComponentOfClass<FileTab>())
-        {
-            tabButton->setToggleState(false, dontSendNotification);
-            tabButton->getPlayButton().getProperties().set("state", "off");
-        }
+       
+		if (isGUIEnabled == false)
+		{
+			this->saveDocument();
+			setEditMode(true);
+			if (FileTab* tabButton = drawableButton->findParentComponentOfClass<FileTab>())
+			{
+				tabButton->getPlayButton().getProperties().set("state", "off");
+				resized();
+			}
+		}
+		else
+		{
+			this->saveDocument();
+			propertyPanel->setVisible(false);
+			resized();
+		}
+
 
     }
 }
@@ -312,13 +448,59 @@ void CabbageMainComponent::comboBoxChanged (ComboBox* comboBoxThatHasChanged)
     const int lineToScrollTo = getCurrentCodeEditor()->instrumentsAndRegions.getValueAt (index - 1);
     getCurrentCodeEditor()->scrollToLine (lineToScrollTo);
 }
+
+//==============================================================================
+void CabbageMainComponent::mouseExit (const MouseEvent& e)
+{
+    if (e.eventComponent->getName() == "ResizerBar")
+        resizerBar.setMouseCursor (MouseCursor::NormalCursor);
+}
+
+void CabbageMainComponent::mouseDown (const MouseEvent& e)
+{
+    if (e.eventComponent->getName() == "ResizerBar")
+        startingVBarDragPos = resizerBar.getPosition().getX();
+}
+
+void CabbageMainComponent::mouseUp (const MouseEvent& e)
+{
+
+}
+
+void CabbageMainComponent:: mouseEnter (const MouseEvent& e)
+{
+    
+    
+    if (e.eventComponent->getName() == "ResizerBar")
+        resizerBar.setMouseCursor (MouseCursor::LeftRightResizeCursor);
+}
+
+void CabbageMainComponent::mouseDrag (const MouseEvent& e)
+{
+    if (e.eventComponent->getName() == "ResizerBar")
+    {
+        CabbageUtilities::debug(startingVBarDragPos + e.getDistanceFromDragStartX());
+        resizerBar.setBounds (startingVBarDragPos + e.getDistanceFromDragStartX(), 0, resizerBar.getWidth(), resizerBar.getHeight());
+        resizerBarCurrentXPos = startingVBarDragPos + e.getDistanceFromDragStartX();
+        resized();
+    }
+}
 //==============================================================================
 void CabbageMainComponent::changeListenerCallback (ChangeBroadcaster* source)
 {
+	if (dynamic_cast<PluginWindow*> (source)) // update lookandfeel whenever a user changes colour settings
+	{
+		propertyPanel->setVisible(false);
+        getFileTab(getCurrentFileIndex())->getEditGUIButton().setToggleState(false, dontSendNotification);
+        isGUIEnabled = false;
+		resized();
+	}
+
     if (dynamic_cast<CabbageSettings*> (source)) // update lookandfeel whenever a user changes colour settings
     {
         lookAndFeel->refreshLookAndFeel (cabbageSettings->getValueTree());
         lookAndFeelChanged();
+        owner->setColour(owner->backgroundColourId, CabbageSettings::getColourFromValueTree(cabbageSettings->valueTree, CabbageColourIds::mainBackground, Colours::lightgrey));
         owner->lookAndFeelChanged();
         updateEditorColourScheme();
     }
@@ -389,11 +571,17 @@ void CabbageMainComponent::changeListenerCallback (ChangeBroadcaster* source)
         }
     }
 
-    else if (dynamic_cast<CabbagePropertiesPanel*> (source)) // update code when a user changes a property
+    else if (CabbagePropertiesPanel* props = dynamic_cast<CabbagePropertiesPanel*> (source)) // update code when a user changes a property
     {
-        if (CabbagePluginEditor* ed = getCabbagePluginEditor())
+        if (props->hide == true)
         {
-
+            props->hide = false; // reset the hide status
+            togglePropertyPanel();
+			saveDocument();
+            getFileTab(getCurrentFileIndex())->getEditGUIButton().setToggleState(false, dontSendNotification);
+        }
+        else if (CabbagePluginEditor* ed = getCabbagePluginEditor())
+        {
             updateCodeInEditor (ed, true, true);
         }
     }
@@ -427,7 +615,6 @@ void CabbageMainComponent::insertCustomPlantToEditor(CabbagePluginEditor* editor
     const String newImportFilesIdentifierString = CabbageWidgetData::getMultiItemTextAsCabbageCode(widgetData, CabbageIdentifierIds::importfiles.toString(), "");
     const String updatedText = CabbageWidgetData::replaceIdentifier(currentLineText, CabbageIdentifierIds::importfiles.toString(), newImportFilesIdentifierString);
     getCurrentCodeEditor()->insertCode(lineNumber, updatedText, true, true);
-    //updateCodeInEditor(editor, true);
 
     Range<int> cabbageSection = CabbageUtilities::getCabbageSectionRange(getCurrentCodeEditor()->getAllText());
     String name;
@@ -460,7 +647,6 @@ void CabbageMainComponent::insertCustomPlantToEditor(CabbagePluginEditor* editor
     " namespace(\"" + namespce + "\")";
 
     getCurrentCodeEditor()->insertCode(cabbageSection.getEnd(), newText, false, true);
-    //setEditMode(false);
     saveDocument();
     setEditMode(true);
 
@@ -537,7 +723,7 @@ void CabbageMainComponent::timerCallback()
     {
         AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
         
-        if (audioGraph->graph.getNodeForId (nodeId) != nullptr && audioGraph->graph.getNodeForId (nodeId)->getProcessor()->isSuspended() == true)
+        if (getFilterGraph()->graph.getNodeForId (nodeId) != nullptr && getFilterGraph()->graph.getNodeForId (nodeId)->getProcessor()->isSuspended() == true)
         {
             stopCsoundForNode ("");
             stopTimer();
@@ -546,12 +732,10 @@ void CabbageMainComponent::timerCallback()
         if (getCurrentCsdFile().existsAsFile())
         {
 
-            const String csoundOutputString = audioGraph->getCsoundOutput (nodeId);
+          const String csoundOutputString = getFilterGraph()->getCsoundOutput (nodeId);
 
-            if (csoundOutputString.length() > 0)
+          if (csoundOutputString.length() > 0)
                 getCurrentOutputConsole()->setText (csoundOutputString);
-
-
 
         }
     }
@@ -559,17 +743,26 @@ void CabbageMainComponent::timerCallback()
 //==============================================================================
 void CabbageMainComponent::updateEditorColourScheme()
 {
-    getLookAndFeel().setColour (PropertyComponent::ColourIds::backgroundColourId, CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::propertyLabelBackground, Colour (50, 50, 50)));
-    getLookAndFeel().setColour (PropertyComponent::ColourIds::labelTextColourId, CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::propertyLabelText, Colour (50, 50, 50)));
-    lookAndFeelChanged();
-    propertyPanel->setBackgroundColour (CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::consoleOutline, Colour (50, 50, 50)));
-    propertyPanel->setBorderColour (CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::consoleOutline, Colour (50, 50, 50)));
+    propertyPanel->setColours (CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::propertyPanelBackground, Colour (50, 50, 50)),
+    CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::propertyLabelBackground, Colour (50, 50, 50)),
+    CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::propertyLabelText, Colour (50, 50, 50)));
+    propertyPanel->setBorderColour (CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::propertyPanelBackground, Colour (50, 50, 50)));
+
+	for (auto* tab : fileTabs)
+	{
+		tab->setButtonColour(CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::fileTabButton, Colour(50, 50, 50)));
+		tab->setFontColour(CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::fileTabText, Colour(50, 50, 50)));
+		tab->setPlayButtonColour(CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::fileTabPlayButton, Colour(50, 50, 50)));
+		tab->repaint();
+	}
 
     if (getCurrentEditorContainer() != nullptr)
         getCurrentEditorContainer()->updateLookAndFeel();
 
     toolbar.setColour (Toolbar::backgroundColourId, CabbageSettings::getColourFromValueTree (cabbageSettings->getValueTree(), CabbageColourIds::menuBarBackground, Colour (50, 50, 50)));
     toolbar.repaint();
+
+	graphComponent->graphPanel->setBackgroundColour(CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::patcher, Colour(50, 50, 50)));
 }
 //==============================================================================
 Image CabbageMainComponent::createBackground()
@@ -577,24 +770,26 @@ Image CabbageMainComponent::createBackground()
     Image backgroundImg;
     backgroundImg = Image (Image::RGB, getWidth(), getHeight(), true);
     ScopedPointer<Drawable> drawable;
-    const int whiteScale = 150;
+    const Colour colour(CabbageSettings::getColourFromValueTree(cabbageSettings->valueTree, CabbageColourIds::fileTabBar, Colour(50, 50, 50)));
     Graphics g (backgroundImg);
     {
-        g.fillAll (Colour (whiteScale, whiteScale, whiteScale));
-        Random pos, width, colour;
+		g.fillAll(colour);
+        Random pos, width, randBrightness;
 
         for (int i = 0; i < getWidth();)
         {
-            const int brightness = colour.nextInt (Range<int> (whiteScale, whiteScale + 5));
-            g.setColour (Colour (brightness, brightness, brightness));
+            const int brightness = randBrightness.nextFloat();
+            g.setColour (colour.darker(brightness*.2));
             g.drawLine (i, 0, i + width.nextInt (Range<int> (0, 10)), getHeight() );
             g.drawLine (0, i, getWidth(), i + width.nextInt (Range<int> (0, 10)));
             i += pos.nextInt (Range<int> (0, 5));
         }
 
         const Image cabbageLogo = ImageCache::getFromMemory (CabbageBinaryData::CabbageLogoBig_png, CabbageBinaryData::CabbageLogoBig_pngSize);
-        g.drawImage (cabbageLogo, getLocalBounds().toFloat(), RectanglePlacement::Flags::doNotResize);
-        return backgroundImg;
+		//g.drawImage(cabbageLogo, 400, 400, 400, 400, 0, 0, cabbageLogo.getWidth(), cabbageLogo.getHeight(), RectanglePlacement::Flags::doNotResize);
+		//g.drawImage(cabbageLogo, getLocalBounds().reduced(.01f, .05f).toFloat(), RectanglePlacement::Flags::onlyReduceInSize);
+		g.drawImage(cabbageLogo, {getWidth()/2.f - 175, 200, 350, 400}, RectanglePlacement::Flags::stretchToFit);
+		return backgroundImg;
     }
 }
 
@@ -603,7 +798,7 @@ void CabbageMainComponent::addFileTab (File file)
 {
 
     FileTab* fileButton;
-    fileTabs.add (fileButton = new FileTab (file.getFileName(), file.getFullPathName(), file.hasFileExtension(".csd")));
+    fileTabs.add (fileButton = new FileTab (file.getFileName(), file.getFullPathName(), file.hasFileExtension(".csd"), cabbageSettings->getUserSettings()->getValue("CustomIconsDir")));
 
     addAndMakeVisible (fileButton);
     fileButton->addListener (this);
@@ -613,6 +808,7 @@ void CabbageMainComponent::addFileTab (File file)
     fileButton->setToggleState (true, dontSendNotification);
     currentFileIndex = fileTabs.size() - 1;
     fileButton->addButtonListeners (this);
+    fileButton->setButtonColour(CabbageSettings::getColourFromValueTree(cabbageSettings->getValueTree(), CabbageColourIds::fileTabButton, Colour(50, 50, 50)));
 
     for ( auto button : fileTabs )
     {
@@ -626,7 +822,7 @@ void CabbageMainComponent::addFileTab (File file)
 
 void CabbageMainComponent::arrangeFileTabs()
 {
-    int xPos = 10;
+    int xPos = resizerBarCurrentXPos;
     const int numTabs = 5;
     int tabIndex = 0;
     const int width = propertyPanel->isVisible() ? getWidth() - propertyPanel->getWidth() - 30 : getWidth() - 25;
@@ -676,53 +872,42 @@ void CabbageMainComponent::addInstrumentsAndRegionsToCombobox()
 void CabbageMainComponent::resizeAllWindows (int height)
 {
     const bool isPropPanelVisible = propertyPanel->isVisible();
-
+	fileTree.setBounds(0, height, resizerBarCurrentXPos-7, getHeight()-height);
+	
+    resizerBar.setBounds(resizerBarCurrentXPos-5, toolbar.getHeight(), 3, getHeight());
+    
     for ( CabbageEditorContainer* editor : editorAndConsole )
     {
         editor->statusBar.setSize (getWidth(), 28);
-        editor->setBounds (0, height, getWidth() - (isPropPanelVisible ? 200 : 0), getHeight() - 5);
+        editor->setBounds (resizerBarCurrentXPos, height, getWidth() - (isPropPanelVisible ? 200 : 0)-resizerBarCurrentXPos, getHeight() - 5);
     }
 
     arrangeFileTabs();
 }
 
 //==============================================================================
-void CabbageMainComponent::createAudioGraph()
+void CabbageMainComponent::createFilterGraph()
 {
-
-	if (fileTabs[currentFileIndex])
-	{
-		AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
-		const Point<int> lastPoint = audioGraph->getPositionOfCurrentlyOpenWindow(nodeId);
-
-		if (lastPoint.getX() > 0)
-		{
-			cabbageSettings->setProperty("windowX", lastPoint.getX());
-			cabbageSettings->setProperty("windowY", lastPoint.getY());
-		}
-	}
-        audioGraph = new AudioGraph (*this, cabbageSettings->getUserSettings(), false);
-        audioGraph->setXmlAudioSettings (cabbageSettings->getUserSettings()->getXmlValue ("audioSetup"));
-        graphComponent = new CabbageGraphComponent (*audioGraph, *this);
-        audioGraphWindow->setContentNonOwned (graphComponent, false);
-  
+	graphComponent = new GraphDocumentComponent(formatManager, deviceManager, knownPluginList);
+	graphComponent->setSize(600, 400);
+	filterGraphWindow->setContentOwned(graphComponent, true);
 }
 //==================================================================================
 void CabbageMainComponent::showGraph()
 {
-    audioGraphWindow->setUsingNativeTitleBar (true);
-    audioGraphWindow->setVisible (true);
-    audioGraphWindow->setTopLeftPosition (getWidth() - audioGraphWindow->getWidth(), 10);
-    audioGraphWindow->setAlwaysOnTop (true);
+	filterGraphWindow->setUsingNativeTitleBar (true);
+	filterGraphWindow->setVisible (true);
+	filterGraphWindow->setTopLeftPosition (getWidth() - filterGraphWindow->getWidth(), 10);
+	filterGraphWindow->setAlwaysOnTop (true);
 }
 //==============================================================================
-void CabbageMainComponent::createEditorForAudioGraphNode (Point<int> position)
+void CabbageMainComponent::createEditorForFilterGraphNode (Point<int> position)
 {
 
     String pluginName = "";
     AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
 
-    if (AudioProcessorGraph::Node::Ptr f = audioGraph->graph.getNodeForId (nodeId))
+    if (AudioProcessorGraph::Node::Ptr f = getFilterGraph()->graph.getNodeForId (nodeId))
     {
         PluginWindow::Type type = f->getProcessor()->hasEditor() ? PluginWindow::Type::normal
                                               : PluginWindow::Type::generic;
@@ -730,12 +915,14 @@ void CabbageMainComponent::createEditorForAudioGraphNode (Point<int> position)
         if (CabbagePluginProcessor* cabbagePlugin = dynamic_cast<CabbagePluginProcessor*> (f->getProcessor()))
             pluginName = cabbagePlugin->getPluginName();
 
-        if (PluginWindow* const w = audioGraph->getOrCreateWindowFor(f, type))
+        if (PluginWindow* const w = getFilterGraph()->getOrCreateWindowFor(f, type))
         {
             if (GenericCabbagePluginProcessor* cabbagePlugin = dynamic_cast<GenericCabbagePluginProcessor*> (f->getProcessor()))
                 w->setVisible (false);
             else
                 w->toFront (true);
+	
+			w->addChangeListener(this);
 
             const int alwaysOnTop = cabbageSettings->getUserSettings()->getIntValue ("SetAlwaysOnTopPlugin");
 
@@ -778,21 +965,21 @@ CabbageOutputConsole* CabbageMainComponent::getCurrentOutputConsole()
 //==================================================================================
 String CabbageMainComponent::getAudioDeviceSettings()
 {
-    if (audioGraph != nullptr && audioGraph->getDeviceManagerSettings().isNotEmpty())
-        return audioGraph->getDeviceManagerSettings();
-    else
-        return String();
+    //if (filterGraph != nullptr && filterGraph->getDeviceManagerSettings().isNotEmpty())
+    //    return filterGraph->getDeviceManagerSettings();
+    //else
+       return String();
 }
 //==================================================================================
 CabbagePluginEditor* CabbageMainComponent::getCabbagePluginEditor()
 {
 	if (fileTabs.size() > 0)
 	{
-		if (audioGraph != nullptr)
+		if (getFilterGraph() != nullptr)
 		{
 			const AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
 			if (nodeId.uid != 99)
-				if (AudioProcessorGraph::Node::Ptr f = audioGraph->graph.getNodeForId(nodeId))
+				if (AudioProcessorGraph::Node::Ptr f = getFilterGraph()->graph.getNodeForId(nodeId))
 				{
 					AudioProcessor* const processor = f->getProcessor();
 					//auto plug = processor->getActiveEditor();
@@ -810,7 +997,7 @@ CabbagePluginProcessor* CabbageMainComponent::getCabbagePluginProcessor()
 
     const AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
 
-    if (AudioProcessorGraph::Node::Ptr f = audioGraph->graph.getNodeForId (nodeId))
+    if (AudioProcessorGraph::Node::Ptr f = getFilterGraph()->graph.getNodeForId (nodeId))
     {
         if (CabbagePluginProcessor* const processor = dynamic_cast<CabbagePluginProcessor*> (f->getProcessor()))
             return processor;
@@ -826,50 +1013,59 @@ int CabbageMainComponent::getStatusbarYPos()
 //=======================================================================================
 void CabbageMainComponent::setEditMode (bool enable)
 {
-    const AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
+	if (enable == false)
+	{
+		propertyPanel->setVisible(false);
+		resized();
+	}
+		
+	const AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
 	//audioGraph->closeAnyOpenPluginWindows();
 	//stopCsoundForNode(fileTabs[currentFileIndex]->getFilename());
 	//runCsoundForNode(fileTabs[currentFileIndex]->getFilename());
 
-    if ( nodeId.uid == -99)
-        return;
+	if (nodeId.uid == -99)
+		return;
 
-    const bool isCabbageFile = CabbageUtilities::hasCabbageTags (getCurrentCsdFile());
+	const bool isCabbageFile = CabbageUtilities::hasCabbageTags(getCurrentCsdFile());
 
-    if (isCabbageFile == true)
-    {
-        if (!getCabbagePluginEditor())
-        {
-            audioGraph->addPlugin (getCurrentCsdFile(), nodeId);
-            const Point<int> pos (audioGraph->getPositionOfCurrentlyOpenWindow (nodeId));
-            createEditorForAudioGraphNode (pos);
-        }
+	if (isCabbageFile == true)
+	{
+		if (!getCabbagePluginEditor())
+		{
+			graphComponent->createNewPlugin(FilterGraph::getPluginDescriptor(nodeId, getCurrentCsdFile().getFullPathName()), { graphComponent->getWidth() / 2, graphComponent->getHeight() / 2 });
+			Point<int> pos = getFilterGraph()->getPositionOfCurrentlyOpenWindow(nodeId);
+			createEditorForFilterGraphNode(pos);
+		}
 
-        getCabbagePluginEditor()->addChangeListener (this);
-        getCabbagePluginEditor()->addActionListener (this);
+		getCabbagePluginEditor()->addChangeListener(this);
+		getCabbagePluginEditor()->addActionListener(this);
 
-        if (enable == true)
-        {
-            audioGraph->getNodeForId (nodeId)->getProcessor()->suspendProcessing (true);
-            fileTabs[currentFileIndex]->getPlayButton().setToggleState (false, dontSendNotification);
-            //audioGraph->stopPlaying();
-            propertyPanel->setInterceptsMouseClicks (true, true);
-        }
-        else
-        {
-            //audioGraph->startPlaying();
-            propertyPanel->setInterceptsMouseClicks (false, false);
-        }
+		if (enable == true)
+		{
+			getFilterGraph()->graph.getNodeForId(nodeId)->getProcessor()->suspendProcessing(true);
+			fileTabs[currentFileIndex]->getPlayButton().setToggleState(false, dontSendNotification);
+			propertyPanel->setInterceptsMouseClicks(true, true);
+		}
+		else
+		{
+			propertyPanel->setInterceptsMouseClicks(false, false);
+		}
 
-        getCabbagePluginEditor()->enableEditMode (enable);
-        isGUIEnabled = enable;
-    }
+		getCabbagePluginEditor()->enableEditMode(enable);
+		isGUIEnabled = enable;
+	}
 }
 //=======================================================================================
 void CabbageMainComponent::showSettingsDialog()
 {
     DialogWindow::LaunchOptions o;
-    o.content.setOwned (new CabbageSettingsWindow (*cabbageSettings, audioGraph->getAudioDeviceSelector()));
+
+    o.content.setOwned (new CabbageSettingsWindow (*cabbageSettings, new AudioDeviceSelectorComponent(deviceManager,
+		0, 256,
+		0, 256,
+		true, true,
+		true, false)));
     o.content->setSize (500, 450);
     o.dialogTitle = TRANS ("Cabbage Settings");
     o.dialogBackgroundColour = Colour (0xfff0f0f0);
@@ -878,19 +1074,44 @@ void CabbageMainComponent::showSettingsDialog()
     o.resizable = false;
     o.launchAsync();
 }
+
+String CabbageMainComponent::getDeviceManagerSettings()
+{
+	if (deviceManager.getCurrentAudioDevice())
+	{
+		ScopedPointer<XmlElement> xml(deviceManager.createStateXml());
+
+		if (xml == nullptr)
+			return String::empty;
+		else
+			return xml->createDocument("");
+	}
+	else return String::empty;
+}
+
+void CabbageMainComponent::reloadAudioDeviceState()
+{
+	ScopedPointer<XmlElement> savedState;
+
+	if (cabbageSettings != nullptr)
+		savedState = cabbageSettings->getUserSettings()->getXmlValue("audioSetup");
+
+	deviceManager.initialise(256,
+		256,
+		savedState,
+		true);
+}
 //==============================================================================
 void CabbageMainComponent::createNewProject()
 {
     DialogWindow::LaunchOptions o;
     o.content.setOwned (new CabbageProjectWindow (this));
     o.content->setSize (650, 350);
-
     o.dialogTitle = TRANS ("Select new project type");
     o.dialogBackgroundColour = Colour (0xfff0f0f0);
     o.escapeKeyTriggersCloseButton = true;
     o.useNativeTitleBar = true;
     o.resizable = false;
-
     o.launchAsync();
 }
 
@@ -950,6 +1171,7 @@ void CabbageMainComponent::launchSSHFileBrowser (String mode)
 //==============================================================================
 void CabbageMainComponent::openGraph (File fileToOpen)
 {
+	stopTimer();
     PluginDescription desc;
     Array<int32> uuids;
     Array<File> files;
@@ -1001,7 +1223,8 @@ void CabbageMainComponent::openGraph (File fileToOpen)
 
 
 
-    audioGraph->loadDocument (fileToOpen);
+	getFilterGraph()->loadDocument (fileToOpen);
+
 }
 //==================================================================================
 File CabbageMainComponent::getCurrentCsdFile ()
@@ -1019,7 +1242,10 @@ void CabbageMainComponent::setCurrentCsdFile (File file)
 //==================================================================================
 void CabbageMainComponent::saveGraph (bool saveAs)
 {
-    audioGraph->saveGraph (saveAs);
+    //getFilterGraph()->saveGraph(saveAs);
+	FileChooser fc("Save file as", File::getSpecialLocation(File::SpecialLocationType::userHomeDirectory), "", CabbageUtilities::shouldUseNativeBrowser());
+	if(fc.browseForFileToSave(true))
+		getFilterGraph()->saveDocument(fc.getResult().withFileExtension(".cabbage"));
 }
 //==================================================================================
 const File CabbageMainComponent::openFile (String filename, bool updateRecentFiles)
@@ -1055,6 +1281,13 @@ const File CabbageMainComponent::openFile (String filename, bool updateRecentFil
     }
 
     createCodeEditorForFile (currentCsdFile);
+
+    if(!currentCsdFile.isAChildOf(fileList.getDirectory()))
+        fileList.setDirectory(currentCsdFile.getParentDirectory(), true, true);
+    
+    fileTree.refresh();
+    fileTree.setSelectedFile(currentCsdFile);
+    
 
     return currentCsdFile;
 
@@ -1147,8 +1380,7 @@ void CabbageMainComponent::createCodeEditorForFile (File file)
 //==============================================================================
 void CabbageMainComponent::saveDocument (bool saveAs, bool recompile)
 {
-
-
+	stopTimer();
     if (saveAs == true)
     {
 
@@ -1214,7 +1446,7 @@ void CabbageMainComponent::saveDocument (bool saveAs, bool recompile)
         if (recompile == true && getCurrentCsdFile().hasFileExtension ((".csd")))
         {
             runCsoundForNode (getCurrentCsdFile().getFullPathName());
-            //fileTabs[currentFileIndex]->getPlayButton().setToggleState (true, dontSendNotification);
+            fileTabs[currentFileIndex]->getPlayButton().setToggleState (true, dontSendNotification);
         }
 
         addInstrumentsAndRegionsToCombobox();
@@ -1387,16 +1619,12 @@ int CabbageMainComponent::testFileForErrors (String file)
     return 0;
 
 }
-void CabbageMainComponent::runCsoundForNode (String file)
+void CabbageMainComponent::runCsoundForNode (String file, Point<int> pos)
 {
-
     if (testFileForErrors (file) == 0) //if Csound seg faults it will take Cabbage down. best to test the instrument in a separate process first.
     {
         if (File (file).existsAsFile())
         {
-            //PluginWindow::closeAllCurrentlyOpenWindows();
-            //audioGraph = nullptr;
-            //createAudioGraph(); //in future versions we can simply edit the node in question and reconnect within the graph
             AudioProcessorGraph::NodeID node(fileTabs[currentFileIndex]->uniqueFileId);
             
             if (node.uid == -99)
@@ -1406,9 +1634,8 @@ void CabbageMainComponent::runCsoundForNode (String file)
                 fileTabs[currentFileIndex]->uniqueFileId = node.uid;
             }
 
-            Point<int> pos (audioGraph->getPositionOfCurrentlyOpenWindow (node));
-			audioGraph->closeAnyOpenPluginWindows();
-            //audioGraph->graph.removeNode(node);
+			if ( pos == Point<int>(-1000, -1000))
+				pos = getFilterGraph()->getPositionOfCurrentlyOpenWindow(node);
 
             if (pos.getX() == -1000 && pos.getY() == -1000)
             {
@@ -1418,21 +1645,25 @@ void CabbageMainComponent::runCsoundForNode (String file)
             }
 
             getCurrentCsdFile().getParentDirectory().setAsCurrentWorkingDirectory();
-            const bool pluginAdded = audioGraph->addPlugin (getCurrentCsdFile(), node);
-            createEditorForAudioGraphNode (pos);
+			//this will create or update plugin...			
+			graphComponent->createNewPlugin(FilterGraph::getPluginDescriptor(node, getCurrentCsdFile().getFullPathName()), pos);
+
+			createEditorForFilterGraphNode (pos);
+
             startTimer (100);
-            if(pluginAdded==false)
-            {
-                fileTabs[currentFileIndex]->getPlayButton().getProperties().set("state", "off");
-                fileTabs[currentFileIndex]->getPlayButton().setToggleState(false, dontSendNotification);
-            }
-            else
+            if(getFilterGraph()->graph.getNodeForId(node))
             {
                 fileTabs[currentFileIndex]->getPlayButton().getProperties().set("state", "on");
                 fileTabs[currentFileIndex]->getPlayButton().setToggleState(true, dontSendNotification);
             }
-            factory.togglePlay (true);
-            graphComponent->updateComponents();
+            else
+            {
+                fileTabs[currentFileIndex]->getPlayButton().getProperties().set("state", "on");
+                fileTabs[currentFileIndex]->getPlayButton().setToggleState(false, dontSendNotification);
+            }
+            
+			factory.togglePlay (true);
+            
         }
         else
             CabbageUtilities::showMessage ("Warning", "Please open a file first", lookAndFeel);
@@ -1444,27 +1675,27 @@ void CabbageMainComponent::stopCsoundForNode (String file)
     if (fileTabs[currentFileIndex] && File (file).existsAsFile())
     {
         AudioProcessorGraph::NodeID nodeId(fileTabs[currentFileIndex]->uniqueFileId);
-            if (audioGraph->getNodeForId(nodeId) != nullptr)
-                audioGraph->getNodeForId(nodeId)->getProcessor()->suspendProcessing(true);
+            if (getFilterGraph()->graph.getNodeForId(nodeId) != nullptr)
+                getFilterGraph()->graph.getNodeForId(nodeId)->getProcessor()->suspendProcessing(true);
 
             fileTabs[currentFileIndex]->getPlayButton().getProperties().set("state", "off");
             fileTabs[currentFileIndex]->getPlayButton().setToggleState(false, dontSendNotification);
-        }
+    }
 }
 //==================================================================================
-void CabbageMainComponent::startAudioGraph()
+void CabbageMainComponent::startFilterGraph()
 {
-    factory.togglePlay (true);
-    audioGraph->startPlaying();
+    //factory.togglePlay (true);
+    //filterGraph->startPlaying();
 }
 //==================================================================================
-void CabbageMainComponent::stopAudioGraph()
+void CabbageMainComponent::stopFilterGraph()
 {
-    stopTimer();
-    factory.togglePlay (false);
+    //stopTimer();
+    //factory.togglePlay (false);
 
-    if (audioGraph)
-        audioGraph->stopPlaying();
+    //if (filterGraph)
+    //    filterGraph->
 
 }
 //==============================================================================

@@ -80,8 +80,9 @@ void CabbageWidgetData::setWidgetState (ValueTree widgetData, String lineFromCsd
     else if (strTokens[0].trim() == String(CabbageWidgetTypes::csoundoutput))
         setCsoundOutputProperties (widgetData, ID);
 
-    else if (strTokens[0].trim() == String(CabbageWidgetTypes::keyboard))
-        setKeyboardProperties (widgetData, ID);
+    else if (strTokens[0].trim() == String(CabbageWidgetTypes::keyboard) || 
+		strTokens[0].trim() == String(CabbageWidgetTypes::keyboarddisplay))
+        setKeyboardProperties (widgetData, ID, (strTokens[0].trim() == "keyboard" ? false : true));
 
     else if (strTokens[0].trim() == String(CabbageWidgetTypes::form))
         setFormProperties (widgetData, ID);
@@ -303,6 +304,7 @@ void CabbageWidgetData::setCustomWidgetState (ValueTree widgetData, String lineO
             case HashStringToInt ("align"):
             case HashStringToInt ("displaytype"):
             case HashStringToInt ("name"):
+			case HashStringToInt ("style"):
             case HashStringToInt ("caption"):
             case HashStringToInt ("plant"):
             case HashStringToInt ("show"):
@@ -386,6 +388,9 @@ void CabbageWidgetData::setCustomWidgetState (ValueTree widgetData, String lineO
             case HashStringToInt ("readonly"):
             case HashStringToInt ("scrollbars"):
             case HashStringToInt ("titlebargradient"):
+            case HashStringToInt ("markerthickness"):
+            case HashStringToInt ("markerstart"):
+            case HashStringToInt ("markerend"):
                 if (getStringProp (widgetData, CabbageIdentifierIds::channeltype) == "string")
                     setProperty (widgetData, identifier, strTokens[0].trim());
                 else
@@ -443,6 +448,7 @@ void CabbageWidgetData::setCustomWidgetState (ValueTree widgetData, String lineO
             case HashStringToInt ("cellwidth"):
             case HashStringToInt ("cellheight"):
             case HashStringToInt ("resize"):
+            case HashStringToInt ("gapmarkers"):
                 setProperty (widgetData, identifier, strTokens[0].trim().getIntValue());
                 break;
                 break;
@@ -478,6 +484,14 @@ void CabbageWidgetData::setCustomWidgetState (ValueTree widgetData, String lineO
                 setScrubberPosition (strTokens, widgetData);
                 break;
 
+			case HashStringToInt("notepressed"):
+				setKeyboardDisplayNotes(strTokens, widgetData, true);
+				break;
+
+			case HashStringToInt("notereleased"):
+				setKeyboardDisplayNotes(strTokens, widgetData, false);
+				break;
+
             case HashStringToInt ("samplerange"):
                 setProperty (widgetData, CabbageIdentifierIds::startpos, strTokens[0].trim().getFloatValue());
 
@@ -505,6 +519,7 @@ void CabbageWidgetData::setCustomWidgetState (ValueTree widgetData, String lineO
             case HashStringToInt ("fillcolour"):
             case HashStringToInt ("tablegridcolour"):
             case HashStringToInt ("trackercolour"):
+            case HashStringToInt ("trackerbgcolour"):
             case HashStringToInt ("highlightcolour"):
             case HashStringToInt ("activecellcolour"):
             case HashStringToInt ("titlebarcolour"):
@@ -512,6 +527,7 @@ void CabbageWidgetData::setCustomWidgetState (ValueTree widgetData, String lineO
             case HashStringToInt ("textcolour"):
             case HashStringToInt ("textboxcolour"):
             case HashStringToInt ("textboxoutlinecolour"):
+            case HashStringToInt ("markercolour"):
                 setProperty (widgetData, identifier, getColourFromText (strTokens.joinIntoString (",")).toString());
                 break;
 
@@ -952,6 +968,19 @@ void CabbageWidgetData::setAmpRange (StringArray strTokens, ValueTree widgetData
         setProperty (widgetData, CabbageIdentifierIds::amprange_quantise, array[3]);
 }
 
+void CabbageWidgetData::setKeyboardDisplayNotes(StringArray strTokens, ValueTree widgetData, bool pressed)
+{
+	var notes;
+	notes.append(strTokens[0].trim().getIntValue());
+
+
+	for (int i = 1; i < strTokens.size(); i++)
+	{
+		notes.append(strTokens[i].trim().getIntValue());
+		setProperty(widgetData, (pressed == true ? CabbageIdentifierIds::keypressed : CabbageIdentifierIds::keyreleased), notes);
+	}
+}
+
 void CabbageWidgetData::setScrubberPosition (StringArray strTokens, ValueTree widgetData)
 {
     var scrubberInfo;
@@ -1123,8 +1152,6 @@ void CabbageWidgetData::setNumProp (ValueTree widgetData, Identifier prop, float
 
 void CabbageWidgetData::setStringProp (ValueTree widgetData, Identifier name, const String value)
 {
-    //  const String typeOfWidget = CabbageWidgetData::getStringProp(widgetData, CabbageIdentifierIds::type);
-    //    if(widgetData.getProperty("channel").size()==1)
     widgetData.setProperty (name, value, 0);
 }
 

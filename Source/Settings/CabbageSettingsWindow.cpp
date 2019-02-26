@@ -38,7 +38,7 @@ static void addCustomListener (Array<PropertyComponent*> comps, CabbageSettingsW
     }
 }
 
-CabbageSettingsWindow::CabbageSettingsWindow (CabbageSettings& settings, AudioDeviceSelectorComponent* audioDevice):
+CabbageSettingsWindow::CabbageSettingsWindow (CabbageSettings& settings, AudioDeviceSelectorComponent* audioDevice) :
     Component (""),
     settings (settings),
     listBox (this),
@@ -52,6 +52,18 @@ CabbageSettingsWindow::CabbageSettingsWindow (CabbageSettings& settings, AudioDe
     deleteRepoButton ("Delete/Remove"),
     saveRepoButton ("Save/Update")
 {
+    bgColour = CabbageSettings::getColourFromValueTree (settings.getValueTree(), CabbageColourIds::menuBarBackground, Colour (147, 210, 0));
+    labelBgColour = bgColour.contrasting(0.05f);
+    labelTextColour = labelBgColour.contrasting(0.85f);
+    propertyPanelLook = new PropertyPanelLookAndFeel();
+    propertyPanelLook->setColours(bgColour, labelBgColour, labelTextColour);
+    miscPanel.setLookAndFeel(propertyPanelLook);
+    colourPanel.setLookAndFeel(propertyPanelLook);
+    audioDeviceSelector->getLookAndFeel().setColour(Label::ColourIds::textColourId, labelTextColour);
+    audioDeviceSelector->getLookAndFeel().setColour(ListBox::ColourIds::textColourId, labelTextColour);
+    audioDeviceSelector->getLookAndFeel().setColour(ListBox::ColourIds::outlineColourId, labelBgColour.contrasting(0.5f));
+    audioDeviceSelector->lookAndFeelChanged();
+
     saveRepoButton.addListener (this);
     deleteRepoButton.addListener (this);
     addColourProperties();
@@ -102,6 +114,7 @@ CabbageSettingsWindow::CabbageSettingsWindow (CabbageSettings& settings, AudioDe
     CabbageUtilities::setImagesForButton (&codeRepoButton, codeSettingsImage);
 
     listBox.setDefaultItem();
+
 }
 
 void CabbageSettingsWindow::addColourProperties()
@@ -117,8 +130,10 @@ void CabbageSettingsWindow::addColourProperties()
             editorProps.add (new ColourPropertyComponent (name, colour.toString(), true));
         else if (name.contains ("Console -"))
             consoleProps.add (new ColourPropertyComponent (name, colour.toString(), true));
-        else if (name.contains ("Interface -"))
-            interfaceProps.add (new ColourPropertyComponent (name, colour.toString(), true ));
+		else if (name.contains("Interface -"))
+		{
+			interfaceProps.add(new ColourPropertyComponent(name, colour.toString(), true));
+		}
     }
 
     colourPanel.clear();
@@ -304,12 +319,14 @@ void CabbageSettingsWindow::addMiscProperties()
     const String cabbageManualDir = settings.getUserSettings()->getValue ("CabbageManualDir");
     const String plantDir = settings.getUserSettings()->getValue ("CabbagePlantDir");
     const String userFilesDir = settings.getUserSettings()->getValue ("UserFilesDir");
+	const String customIcons = settings.getUserSettings()->getValue("CustomIconsDir");
 
     dirProps.add (new CabbageFilePropertyComponent ("Csound manual dir.", true, false,  "*", manualDir));
     dirProps.add (new CabbageFilePropertyComponent ("Cabbage manual dir.", true, false,  "*", cabbageManualDir));
     dirProps.add (new CabbageFilePropertyComponent ("Cabbage examples dir.", true, false, "*", examplesDir));
     dirProps.add (new CabbageFilePropertyComponent ("Cabbage plants dir.", true, false, "*", plantDir));
     dirProps.add (new CabbageFilePropertyComponent ("User files dir.", true, false, "*", userFilesDir));
+	dirProps.add(new CabbageFilePropertyComponent ("Custom icons dir.", true, false, "*", customIcons));
 
     const String sshAddress = settings.getUserSettings()->getValue ("SSHAddress");
     sshProps.add (new TextPropertyComponent (Value (sshAddress), "SSH Address", 200, false));
@@ -366,12 +383,14 @@ void CabbageSettingsWindow::resized()
 
 void CabbageSettingsWindow::paint (Graphics& g)
 {
-    Rectangle<int> r (getLocalBounds());
-    g.fillAll (Colour (147, 210, 0));
+    Rectangle<int> r (getLocalBounds());   
+	g.fillAll (bgColour);
+	//lime green
+    //g.fillAll (Colour (147, 210, 0));
     g.setColour (Colours::black.withAlpha (.1f));
     g.fillRect (r.withLeft (90));
     g.setFont (Font (18, 1));
-    g.setColour (Colours::black);
+    g.setColour (labelTextColour);//(Colours::black);
 
     if (miscPanel.isVisible())
         g.drawFittedText ("Miscellaneous", 100, 10, r.getWidth() - 100, 20, Justification::centred, 1);
@@ -406,14 +425,14 @@ void CabbageSettingsWindow::filenameComponentChanged (FilenameComponent* fileCom
 
     if (fileComponent->getName() == "Csound manual dir.")
         settings.getUserSettings()->setValue ("CsoundManualDir", fileComponent->getCurrentFileText());
-    else if (fileComponent->getName() == "Cabbage manual dir.")
-        settings.getUserSettings()->setValue ("CabbageManualDir", fileComponent->getCurrentFileText());
     else if (fileComponent->getName() == "Cabbage plants dir.")
         settings.getUserSettings()->setValue ("CabbagePlantDir", fileComponent->getCurrentFileText());
     else if (fileComponent->getName() == "Cabbage examples dir.")
         settings.getUserSettings()->setValue ("CabbageExamplesDir", fileComponent->getCurrentFileText());
     else if (fileComponent->getName() == "User files dir.")
         settings.getUserSettings()->setValue ("UserFilesDir", fileComponent->getCurrentFileText());
+	else if (fileComponent->getName() == "Custom icons dir.")
+		settings.getUserSettings()->setValue("CustomIconsDir", fileComponent->getCurrentFileText());
 }
 
 void CabbageSettingsWindow::selectPanel (String button)

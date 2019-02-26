@@ -26,26 +26,39 @@ class FileTab : public TextButton
 {
     DrawableButton play, close, showEditor, editGUI;
     File csdFile;
+	Colour fileBarBackground, fileTabBackground, fileTabText;
+    String iconsPath;
 
+    Drawable* drawable_editGUIoff = nullptr;
+    Drawable* drawable_editGUIon = nullptr;
 
     class Overlay : public Component
     {
     public:
-        Overlay(): Component() {}
+        Overlay() : Component() {}
+
+        Colour overlayColour = Colours::black;
+
         void paint (Graphics& g)  override
         {
-            g.fillAll (Colours::black.withAlpha (.5f));
+            g.fillAll (overlayColour.withAlpha (.7f));
         }
     };
 
     Overlay overlay;
     bool isCsdFile;
+	Colour buttonColour = { 82, 99, 106 };
+	Colour fontColour = { 200, 200, 200 };
+	Colour playButtonColour = { 50, 62, 68 };
 public:
 
 
-    FileTab (String name, String filename, bool isCsdFile=true);
+    FileTab (String name, String filename, bool isCsdFile=true, String iconsPathName="");
+    ~FileTab ();
+
     const String getFilename();
 
+    void setIconsPath(String path);
     void drawButtonShape (Graphics& g, const Path& outline, Colour baseColour, float height);
     void paintButton (Graphics& g, bool isMouseOverButton, bool isButtonDown);
     void addButtonListeners (Button::Listener* listener);
@@ -53,6 +66,17 @@ public:
     void resized();
     void setDrawableImages (DrawableButton& button, int width, int height, String type);
     void drawButtonText (Graphics& g);
+	void setButtonColour(Colour colour) {
+		buttonColour = colour;
+        overlay.overlayColour = colour;
+	}
+	void setFontColour(Colour colour) {
+		fontColour = colour;
+	}
+	void setPlayButtonColour(Colour colour) {
+		playButtonColour = colour;
+		setDrawableImages(play, 60, 25, "play");
+	}
 
     File getFile() {     return csdFile; }
     void setFile (File file) {        csdFile = file;   }

@@ -41,11 +41,11 @@ void CabbageSettings::setDefaultSettings()
     ScopedPointer<XmlElement> xml;
     xml = new XmlElement ("PLANTS");
     String homeDir = File::getSpecialLocation (File::userHomeDirectory).getFullPathName();
-    String manualPath, examplesDir, cabbageHelp;
+    String manualPath, examplesDir, cabbageHelp, iconsPath;
 
     examplesDir = File::getSpecialLocation (File::currentExecutableFile).getParentDirectory().getFullPathName() + "/Examples";
     cabbageHelp = File::getSpecialLocation (File::currentExecutableFile).getParentDirectory().getFullPathName() + "/CabbageManual";
-
+	iconsPath = File::getSpecialLocation(File::currentExecutableFile).getParentDirectory().getFullPathName() + "/Themes/modern-darkBG";
 #if defined(WIN32)
     manualPath = "C:\\Program Files\\Csound6_x64\\doc\\manual";
 #elif !defined(MACOSX)
@@ -63,13 +63,15 @@ void CabbageSettings::setDefaultSettings()
     defaultPropSet->setValue ("CabbagePlantDir", homeDir + "/Plants");
     defaultPropSet->setValue ("CabbageExamplesDir", examplesDir);
     defaultPropSet->setValue ("CabbageManualDir", cabbageHelp);
+	defaultPropSet->setValue("CustomIconsDir", iconsPath);
     defaultPropSet->setValue ("MostRecentDirectory", homeDir);
     defaultPropSet->setValue ("UserFilesDir", homeDir);
     defaultPropSet->setValue ("DisablePluginInfo", 0);
     defaultPropSet->setValue ("ShowEditorConsole", 1);
+    defaultPropSet->setValue ("ShowFileBrowser", 0);
     defaultPropSet->setValue ("ExternalEditor", 0);
     defaultPropSet->setValue ("UseCabbageIO", 1);
-    defaultPropSet->setValue ("OpenMostRecentFileOnStartup", 0);
+    defaultPropSet->setValue ("OpenMostRecentFileOnStartup", 1);
     defaultPropSet->setValue ("FontSize", 14);
     defaultPropSet->setValue ("FontSizeConsole", 14);
     defaultPropSet->setValue ("ShowConsoleWithEditor", 1);
@@ -91,7 +93,7 @@ void CabbageSettings::setDefaultSettings()
     defaultPropSet->setValue ("ShowAutoComplete", 0);
     defaultPropSet->setValue ("ShowNativeFileDialogues", 1);
     defaultPropSet->setValue ("EnableNativePopup", 0);
-	defaultPropSet->setValue("UseModifiedAudioGraph", 0);
+	defaultPropSet->setValue ("UseModifiedAudioGraph", 0);
     defaultPropSet->setValue ("SSHHomeDir", "/pi");
     defaultPropSet->setValue ("SSHAddress", "empty");
     defaultPropSet->setValue ("SSHLocalDir", File::getSpecialLocation (File::SpecialLocationType::userHomeDirectory).getFullPathName());
@@ -107,38 +109,41 @@ void CabbageSettings::setDefaultSettings()
     defaultPropSet->setValue ("IDE_StatusBarPos", 500);
     defaultPropSet->setValue ("searchCaseSensitive", 0);
 
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::menuBarBackground,  "ff636262");
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::menuBarBackground, "ff52636a" /*"ff636262"*/);
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::menuBarText,  "FFFFFFFF");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::menuBarMouseOverBackground,  "ff9a9a9a");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuBackground,  "fff5f5f5");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuMouseOverBackground,  "ffa4a4a4");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuText,  "ff484848");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuHighlightedText,  "ff000000");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::mainBackground, "ff000000");
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::menuBarMouseOverBackground,  "ff5c7387" /*"ff9a9a9a"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuBackground, "ff474e54"/*"fff5f5f5"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuMouseOverBackground,  "ff6c8090"/*"ffa4a4a4"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuText,  "ffd9e4e7"/*"ff484848"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::popupMenuHighlightedText, "ffffffff" /*"ff000000"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::mainBackground, "ff52636a");
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::statusBar, "ff000000");
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::statusBarText, "ffffffff");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::propertyPanelBackground, "ff222222");
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::propertyPanelBackground, "ffa6b3b9");
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::propertyLabelText, "ff000000");
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::propertyLabelBackground, "ffd4d4d4");
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::alertWindowBackground, "ff000000");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::codeBackground,  "ff222222");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::lineNumberBackground,  "ff000000");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::lineNumbers,  "E9B2B2B2");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::selectTextBackground,  "FF2859AC");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::caret,  "ffe2a4a4");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::identifierLiteral,  "ff007dff");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::stringLiteral,  "ff3fff00");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::keyword,  "ffc5c5c5");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::comment,  "FF72D20C");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::numbers,  "ffffffff");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::csdtags, "ff575757");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::consoleText, "FFFFFFFF");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::consoleBackground, "FF000000");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::consoleOutline, "ffababab");
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::codeBackground,  "ff263238"/*"ff222222"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::lineNumberBackground,  "ff323e44"/*"ff000000"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::lineNumbers,  "e999a7ae"/*"E9B2B2B2"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::selectTextBackground, "ff3f616c" /*"FF2859AC"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::caret,  "fff39636"/*"ffe2a4a4"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::identifierLiteral,  "ffcfcfcf"/*"ff007dff"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::stringLiteral,  "ff8ac3f3"/*"ff3fff00"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::keyword, "ffee6f6f"/*"ffc5c5c5"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::comment, "ff72d20c"/*"FF72D20C"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::numbers, "ffe9ec64"/*"ffffffff"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::csdtags, "ffbf74c5"/*"ff575757"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::consoleText, "ff566c7b"/*"FFFFFFFF"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::consoleBackground, "ff16191d"/*"FF000000"*/);
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::consoleOutline, "ff16191d"/*"ffababab"*/);
     defaultPropSet->setValue ("Colours_" + CabbageColourIds::genericPluginInterface, "FF666666");
-    defaultPropSet->setValue ("Colours_" + CabbageColourIds::scrollbars,  "ff222222");
-
-
+    defaultPropSet->setValue ("Colours_" + CabbageColourIds::scrollbars,  "ff5a626f"/*"ff222222"*/);
+	defaultPropSet->setValue ("Colours_" + CabbageColourIds::fileTabBar, "ff323e44");
+	defaultPropSet->setValue ("Colours_" + CabbageColourIds::fileTabButton, "ff52636a");
+	defaultPropSet->setValue ("Colours_" + CabbageColourIds::fileTabText, "ffffffff");
+	defaultPropSet->setValue("Colours_" + CabbageColourIds::fileTabPlayButton, "ff323e44");
+	defaultPropSet->setValue ("Colours_" + CabbageColourIds::patcher, Colour(200, 200, 200).toString());
     getUserSettings()->setFallbackPropertySet (defaultPropSet);
 
     valueTree.addChild (ValueTree ("Colours"), -1, 0);

@@ -23,12 +23,14 @@
 #include "../CabbageCommonHeaders.h"
 #include "../Utilities/CabbageColourProperty.h"
 #include "../Utilities/CabbageFilePropertyComponent.h"
-
+#include "../LookAndFeel/FlatButtonLookAndFeel.h"
+#include "../LookAndFeel/PropertyPanelLookAndFeel.h"
 
 //==============================================================================
 class CabbagePropertiesPanel :
     public Component,
     public ChangeBroadcaster,
+	public Button::Listener,
     public Value::Listener,
     public TextPropertyComponent::Listener,
     public ChangeListener,
@@ -48,6 +50,8 @@ public:
     void valueChanged (Value& value);
     void filenameComponentChanged (FilenameComponent* fileComponent);
     void saveOpenessState();
+
+	void buttonClicked(Button *);
     Array<PropertyComponent*> createPositionEditors (ValueTree valueTree);
     Array<PropertyComponent*> createTextEditors (ValueTree valueTree);
     Array<PropertyComponent*> createNumberEditors (ValueTree valueTree);
@@ -61,13 +65,14 @@ public:
     Array<PropertyComponent*> createTwoValueEditors (ValueTree valueTree, Identifier identifier);
     Value isActiveValue, isVisibleValue, alphaValue, shapeValue,
           sliderNumberBoxValue, alignValue, velocityValue, fileModeValue,
-          fillTableWaveformValue, zoomValue, channelTypeValue;
+          fillTableWaveformValue, zoomValue, channelTypeValue, innerRadius, outerRadius;
     Colour backgroundColour, borderColour;
+	bool hide = false;
 
-
-    void setBackgroundColour (Colour colour)
+    void setColours (Colour panelBG, Colour labelBG, Colour labelText)
     {
-        backgroundColour = colour;
+        backgroundColour = panelBG;
+        propertyPanelLook->setColours (panelBG, labelBG, labelText);
         repaint();
     }
 
@@ -80,6 +85,7 @@ private:
     TooltipWindow tooltipWindow;
     PropertyPanel propertyPanel;
     String previousWidgetName = "";
+	
 
     struct SectionState
     {
@@ -103,7 +109,9 @@ private:
     }
 
     ValueTree widgetData;
-
+	TextButton hideButton;
+    ScopedPointer<FlatButtonLookAndFeel> flatLook;
+    ScopedPointer<PropertyPanelLookAndFeel> propertyPanelLook;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CabbagePropertiesPanel)
 };

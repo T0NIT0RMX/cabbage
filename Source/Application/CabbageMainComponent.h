@@ -27,14 +27,21 @@
 #include "../GUIEditor/CabbagePropertiesPanel.h"
 #include "../CabbageIds.h"
 #include "CabbageToolbarFactory.h"
-#include "../Audio/Graph/AudioGraph.h"
+#include "../Audio/Filters/FilterGraph.h"
+#include "../Audio/UI/GraphEditorPanel.h"
 #include "../Settings/CabbageSettings.h"
-#include "CabbagePluginComponent.h"
-#include "CabbageGraphComponent.h"
+//#include "CabbagePluginComponent.h"
+//#include "CabbageGraphComponent.h"
 #include "FileTab.h"
+#include "../Audio/Plugins/CabbagePluginProcessor.h"
+#include "../Audio/Plugins/CabbagePluginEditor.h"
+#include "../Audio/Plugins/GenericCabbagePluginProcessor.h"
+#include "../Audio/Plugins/CabbageInternalPluginFormat.h"
+
 
 class CabbageDocumentWindow;
 class FileTab;
+
 
 class CabbageMainComponent
     : public Component,
@@ -43,9 +50,32 @@ class CabbageMainComponent
       public ChangeListener,
       public Timer,
       public ComboBox::Listener,
-      public FileDragAndDropTarget
+      public FileDragAndDropTarget,
+	  public FileBrowserListener
 {
 public:
+
+    void mouseDown (const MouseEvent& e) override;
+    void mouseUp (const MouseEvent& e) override;
+    void mouseExit (const MouseEvent& e) override;
+    void mouseEnter (const MouseEvent& e) override;
+    void mouseDrag (const MouseEvent& e) override;
+    
+	void selectionChanged() override
+	{
+		// we're only really interested in when the selection changes, regardless of if it was
+		// clicked or not so we'll only override this method
+		auto selectedFile = fileTree.getSelectedFile();
+
+	}
+
+	void fileClicked(const File& file, const MouseEvent&) override 
+	{
+        bringCodeEditorToFront(file);
+	}
+
+	void fileDoubleClicked(const File&)              override {}
+	void browserRootChanged(const File&)             override {}
 
     //==============================================================================
     CabbageMainComponent (CabbageDocumentWindow* owner, CabbageSettings* settings);
@@ -60,8 +90,8 @@ public:
     void paint (Graphics&) override;
     void resized() override;
     void resizeAllWindows (int height);
-    void createEditorForAudioGraphNode (Point<int> position);
-    void createAudioGraph();
+    void createEditorForFilterGraphNode (Point<int> position);
+    void createFilterGraph();
     void createCodeEditorForFile (File file);
     void createNewProject();
     void createNewTextFile(String contents = "");
@@ -76,10 +106,10 @@ public:
     void closeDocument();
     void showSettingsDialog();
     void saveDocument (bool saveAs = false, bool recompile = true);
-    void runCsoundForNode (String file);
+    void runCsoundForNode (String file, Point<int> pos = Point<int>(-1000, -1000));
     void stopCsoundForNode (String file);
-    void stopAudioGraph();
-    void startAudioGraph();
+    void stopFilterGraph();
+    void startFilterGraph();
     void bringCodeEditorToFront (File file);
     void bringCodeEditorToFront (FileTab* tab);
     void updateEditorColourScheme();
@@ -100,6 +130,9 @@ public:
     void handleFileTab (FileTab* drawableButton, bool icrement = false) ;
     void addFileTab (File file);
     void arrangeFileTabs();
+	void importTheme();
+	void exportTheme();
+
     int getNumberOfFileTabs() {     return fileTabs.size();  };
     FileTab* getFileTab(int index){  return fileTabs[index]; };
     FileTab* getFileTabForNodeId(AudioProcessorGraph::NodeID nodeId)
@@ -122,6 +155,16 @@ public:
     int findNext (bool forward);
     void replaceText (bool replaceAll);
 
+	//==============================================================================
+	AudioDeviceManager deviceManager;
+	AudioPluginFormatManager formatManager;
+	OwnedArray<PluginDescription> internalTypes;
+	KnownPluginList knownPluginList;
+	KnownPluginList::SortMethod pluginSortMethod;
+	String getDeviceManagerSettings();
+	void reloadAudioDeviceState();
+
+
     //==============================================================================
     CabbagePluginEditor* getCabbagePluginEditor();
     CabbagePluginProcessor* getCabbagePluginProcessor();
@@ -131,9 +174,18 @@ public:
     String getAudioDeviceSettings();
     int getStatusbarYPos();
     CabbageSettings* getCabbageSettings() {      return cabbageSettings; }
-    AudioGraph* getAudioGraph() {                return audioGraph;  }
+    FilterGraph* getFilterGraph() {                return graphComponent->graph.get();  }
     //==============================================================================
     ScopedPointer<CabbagePropertiesPanel> propertyPanel;
+	void togglePropertyPanel()
+	{
+		if (getCurrentCodeEditor())
+		{
+			propertyPanel->setVisible(!propertyPanel->isVisible());
+			resized();
+		}
+	}
+    
     OwnedArray<CabbageEditorContainer> editorAndConsole;
     ScopedPointer<CabbageIDELookAndFeel> lookAndFeel;
     Toolbar toolbar;
@@ -142,9 +194,86 @@ public:
     void launchHelpfile (String type);
     TextButton cycleTabsButton;
     int duplicationIndex = 0;
-	CabbagePluginEditor* currentPluginEditor;
+
+	class FilterGraphDocumentWindow : public DocumentWindow
+	{
+		Colour colour;
+		CabbageMainComponent* owner;
+	public:
+		FilterGraphDocumentWindow(String caption, Colour backgroundColour, CabbageMainComponent* owner)
+			: DocumentWindow(caption, backgroundColour, DocumentWindow::TitleBarButtons::allButtons), owner(owner), colour(backgroundColour)
+		{
+			setSize(600, 600);
+			setName(caption);
+			this->setTitleBarHeight(15);
+			this->setResizable(true, true);
+			
+		}
+
+		void closeButtonPressed() override { setVisible(false); }
+		
+		CabbageMainComponent* getOwner() {
+			return owner;
+		};
+
+	};
+
+    class VerticalResizerBar : public Component
+    {
+    public:
+        VerticalResizerBar (ValueTree valueTree, CabbageMainComponent* parent)
+        :   Component ("ResizerBar"),
+        valueTree (valueTree),
+        owner (parent)
+        {
+            
+        }
+        
+        void paint (Graphics& g)  override
+        {
+            g.fillAll(CabbageSettings::getColourFromValueTree (valueTree, CabbageColourIds::menuBarBackground, Colours::black));
+        };
+        
+        int getCurrentYPos() {   return currentYPos; }
+        
+    private:
+        ValueTree valueTree;
+        int startingYPos;
+        int currentYPos = 550;
+        CabbageMainComponent* owner;
+    };
+    
+    VerticalResizerBar resizerBar;
+    int startingVBarDragPos = 195;
+    int resizerBarCurrentXPos = 195;
+    
+    void toggleBrowser()
+    {
+        if(resizerBar.isVisible())
+        {
+            resizerBar.setVisible(false);
+            resizerBarCurrentXPos = 0;
+            resized();
+            cabbageSettings->setProperty ("ShowFileBrowser", 0);
+        }
+        else
+        {
+            resizerBarCurrentXPos = 195;
+            resizerBar.setVisible(true);
+            cabbageSettings->setProperty ("ShowFileBrowser", 1);
+            resized();
+        }
+    }
+    
+	TimeSliceThread directoryThread{ "File Scanner Thread" };
+	WildcardFileFilter wildcardFilter{ "*", "*", "Movies File Filter" };
+	DirectoryContentsList fileList{ &wildcardFilter, directoryThread };
+	FileTreeComponent fileTree{ fileList };
 
 private:
+
+
+
     int getTabFileIndex (int32 nodeId);
     int getTabFileIndex (File file);
     OwnedArray<FileTab> fileTabs;
@@ -162,32 +291,16 @@ private:
     CabbageSettings* cabbageSettings;
     int currentFileIndex = 0;
     int numberOfFiles = 0;
-    ScopedPointer<AudioGraph> audioGraph;
-    CabbageGraphComponent* graphComponent;
+    //ScopedPointer<FilterGraph> filterGraph;
     bool isGUIEnabled = false;
     String consoleMessages;
     const int toolbarThickness = 35;
     class FindPanel;
     ScopedPointer<FindPanel> findPanel;
-    TooltipWindow tooltipWindow;
+    //TooltipWindow tooltipWindow;
 
-    class AudioGraphDocumentWindow : public DocumentWindow
-    {
-        Colour colour;
-    public:
-        AudioGraphDocumentWindow (String caption, Colour backgroundColour)
-            : DocumentWindow (caption, backgroundColour, DocumentWindow::TitleBarButtons::allButtons), colour (backgroundColour)
-        {
-            setSize (600, 600);
-            setName (caption);
-            this->setResizable (true, true);
-        }
-
-        void closeButtonPressed() override {    setVisible (false);  }
-        void paint (Graphics& g)  override { g.fillAll (colour); }
-    };
-
-    ScopedPointer<AudioGraphDocumentWindow> audioGraphWindow;
+	ScopedPointer<GraphDocumentComponent> graphComponent;
+    ScopedPointer<FilterGraphDocumentWindow> filterGraphWindow;
 
 
     //ScopedPointer<HtmlHelpDocumentWindow> helpWindow;

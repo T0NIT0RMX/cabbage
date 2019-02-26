@@ -40,12 +40,13 @@ namespace CommandIDs
         showGraph               = 0x200044,
         saveGraph               = 0x200045,
         saveGraphAs             = 0x200046,
-
+		toggleProperties		= 0x200047,
+		importTheme				= 0x200048,
+		exportTheme				= 0x200049,
         closeProject            = 0x200051,
         saveProject             = 0x200060,
         saveAll                 = 0x200080,
         runDiagnostics          = 0x200072,
-
         startAudioGraph         = 0x200076,
         exportAsVSTSynth        = 0x200077,
         exportAsVSTEffect       = 0x200074,
@@ -56,13 +57,11 @@ namespace CommandIDs
         clearConsole            = 0x20007a,
         exportAsAUMIDIFx         = 0x20017b,
         exportAsVCVRackModule   = 0x022017c,
-        
         closeAllDocuments           = 0x201000,
         exportAsVSTEffectEncrypted  = 0x201002,
         exportAsVSTSynthEncrypted   = 0x201003,
         exportAsAUEffectEncrypted   = 0x201004,
         exportAsAUSynthEncrypted    = 0x201005,
-
         showFindPanel           = 0x2010a0,
         findSelection           = 0x2010a1,
         findNext                = 0x2010a2,
@@ -78,7 +77,6 @@ namespace CommandIDs
         cabbageHelp             = 0x4100c2,
         csoundHelp              = 0x4100c3,
         contextHelp             = 0x4100c4,
-
         undo            = 0x512011,
         redo            = 0x512012,
         cut             = 0x512013,
@@ -91,6 +89,7 @@ namespace CommandIDs
         selectAll           = 0x512027,
         deselectAll         = 0x512028,
         editMode            = 0x512029,
+        toggleFileBrowser   = 0x512030,
 
         showGenericWidgetWindow = 0x612000,
         batchConvertExamplesAU    = 0x612001,
@@ -122,15 +121,20 @@ namespace CabbageInterfaceModes
 namespace CabbageColourIds
 {
     static const Identifier menuBarBackground = "Interface - MenuBar Background";
-    static const Identifier menuBarText = "Interface - MenuBarText";
+    static const Identifier menuBarText = "Interface - MenuBar Text";
     static const Identifier menuBarMouseOverBackground = "Interface - MenuBar MouseOver Background";
     static const Identifier popupMenuMouseOverBackground = "Interface - PopupMenu MouseOver Background";
     static const Identifier popupMenuBackground = "Interface - PopupMenu Background";
     static const Identifier popupMenuText = "Interface - PopupMenu Text";
     static const Identifier popupMenuHighlightedText = "Interface - PopupMenu Highlighted Text";
     static const Identifier mainBackground = "Interface - Main Background";
-    static const Identifier statusBar = "Interface - Status Bar";
-    static const Identifier statusBarText = "Interface - Status Bar Text";
+	static const Identifier statusBar = "Interface - Status Bar";
+	static const Identifier fileTabBar = "Interface - File Tab Bar";
+	static const Identifier fileTabButton = "Interface - File Tab Button";
+	static const Identifier fileTabText = "Interface - File Tab Text";
+	static const Identifier fileTabPlayButton = "Interface - File Tab Play Button";
+	static const Identifier patcher = "Interface - Patcher";
+	static const Identifier statusBarText = "Interface - Status Bar Text";
     static const Identifier propertyPanelBackground = "Interface - Property Panel Background";
     static const Identifier propertyLabelBackground = "Interface - Property Label Background";
     static const Identifier propertyLabelText = "Interface - Property Label Text";
@@ -186,6 +190,7 @@ class CabbageLayoutWidgetStrings : public StringArray
 public:
     CabbageLayoutWidgetStrings()
     {
+		add ("keyboarddisplay");
         add ("form");
         add ("image");
         add ("socketsend");
@@ -295,8 +300,10 @@ public:
         add ("blacknotecolour");
         add ("highlightcolour");
         add ("tablegridcolour");
+        add ("trackerbgcolour");
         add ("backgroundcolor");
         add ("showstepnumbers");
+        add ("markerthickness");
         add ("titlebarcolour");
         add ("tablegridcolor");
         add ("signalvariable");
@@ -308,6 +315,7 @@ public:
         add ("textboxcolour");
         add ("trackercolour");
         add ("trackerradius");
+        add ("markercolour");
         add ("valuetextbox");
         add ("fontcolour:1");
         add ("amprange_min");
@@ -322,6 +330,8 @@ public:
         add ("metercolour:");
         add ("popuppostfix");
         add ("manufacturer");
+        add ("markerstart");
+		add ("keyreleased");
         add ("orientation");
         add ("tablecolour");
         add ("metercolour");
@@ -340,13 +350,16 @@ public:
         add ("fontcolour");
         add ("textcolour");
         add ("updaterate");
+        add ("gapmarkers");
         add ("guirefresh");
         add ("tablecolor");
         add ("radiogroup");
         add ("macronames");
         add ("ballcolour");
+		add ("keypressed");
         add ("scrollbars");
         add ("cellheight");
+        add ("markerend");
         add ("menucolor");
         add ("cellwidth");
         add ("popuptext");
@@ -399,6 +412,7 @@ public:
         add ("value");
         add ("range");
         add ("plant");
+		add ("style");
         add ("align");
         add ("file");
         add ("wrap");
@@ -440,6 +454,7 @@ namespace CabbageWidgetTypes
 	static const String image = "image";
 	static const String infobutton = "infobutton";
 	static const String keyboard = "keyboard";
+	static const String keyboarddisplay = "keyboarddisplay";
 	static const String label = "label";
 	static const String line = "line";
 	static const String listbox = "listbox";
@@ -507,6 +522,7 @@ namespace CabbageIdentifierIds
 	static const Identifier drawmode = "drawmode";
 	static const Identifier endpoint = "endpoint";
 	static const Identifier endpos = "endpos";
+    static const Identifier gapmarkers = "gapmarkers";
 	static const Identifier macronames = "macronames";
     static const Identifier manufacturer = "manufacturer";
 	static const Identifier ffttablenumber = "ffttablenumber";
@@ -546,6 +562,10 @@ namespace CabbageIdentifierIds
 	static const Identifier linethickness = "linethickness";
 	static const Identifier logger = "logger";
 	static const Identifier macrostrings = "macrostrings";
+    static const Identifier markercolour = "markercolour";
+    static const Identifier markerend = "markerend";
+    static const Identifier markerstart = "markerstart";
+    static const Identifier markerthickness = "markerthickness";
 	static const Identifier matrixcols = "matrixcols";
 	static const Identifier matrixrows = "matrixrows";
 	static const Identifier max = "max";
@@ -566,6 +586,8 @@ namespace CabbageIdentifierIds
 	static const Identifier mode = "mode";
 	static const Identifier mouseoeverkeycolour = "mouseoeverkeycolour";
 	static const Identifier name = "name";
+	static const Identifier keypressed = "keypressed";
+	static const Identifier keyreleased = "keyreleased";
 	static const Identifier oncolour = "oncolour";
 	static const Identifier onfontcolour = "onfontcolour";
 	static const Identifier orientation = "orientation";
@@ -611,6 +633,7 @@ namespace CabbageIdentifierIds
 	static const Identifier stack = "stack";
 	static const Identifier startpoint = "startpoint";
 	static const Identifier startpos = "startpos";
+	static const Identifier style = "style";
 	static const Identifier surrogatelinenumber = "surrogatelinenumber";
 	static const Identifier tabbed = "tabbed";
 	static const Identifier tablebackgroundcolour = "tablebackgroundcolour";
@@ -629,6 +652,7 @@ namespace CabbageIdentifierIds
     static const Identifier tofront = "tofront";
     static const Identifier top = "top";
 	static const Identifier trackercolour = "trackercolour";
+    static const Identifier trackerbgcolour = "trackerbgcolour";
 	static const Identifier trackerthickness = "trackerthickness";
     static const Identifier trackeroutsideradius = "trackeroutsideradius";
     static const Identifier trackerinsideradius = "trackerinsideradius";
@@ -748,8 +772,8 @@ public:
         set ("Outline", CabbageIdentifierIds::outlinecolour.toString());
         set ("Tracker", CabbageIdentifierIds::trackercolour.toString());
         set ("Tracker Thickness", CabbageIdentifierIds::trackerthickness.toString());
-        set ("Tracker Inner Radius", CabbageIdentifierIds::trackerinsideradius.toString());
-        set ("Tracker Outer Radius", CabbageIdentifierIds::trackeroutsideradius.toString());
+        set ("Inner Radius", CabbageIdentifierIds::trackerinsideradius.toString());
+        set ("Outer Radius", CabbageIdentifierIds::trackeroutsideradius.toString());
         set ("Soundfiler Background", CabbageIdentifierIds::tablebackgroundcolour.toString());
         set ("Text Colour", CabbageIdentifierIds::textcolour.toString());
         set ("Value Box", CabbageIdentifierIds::valuetextbox.toString());

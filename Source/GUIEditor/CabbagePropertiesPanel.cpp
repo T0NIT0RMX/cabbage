@@ -89,12 +89,23 @@ static void createMultiLineTextEditors (ValueTree valueTree, Array<PropertyCompo
 // Property Panel for editing widgets
 //==============================================================================
 CabbagePropertiesPanel::CabbagePropertiesPanel (ValueTree widgetData)
-    : widgetData (widgetData)
+    : widgetData (widgetData), hideButton("x")
 {
     //addAndMakeVisible(tooltipWindow);
     setOpaque (true);
     setSize (300, 500);
+    
+    propertyPanelLook = new PropertyPanelLookAndFeel();
+    propertyPanel.setLookAndFeel (propertyPanelLook);
+    
+    flatLook = new FlatButtonLookAndFeel();
+    hideButton.setLookAndFeel (flatLook);
+    hideButton.setColour(TextButton::ColourIds::buttonColourId, backgroundColour);// Colours::black);
+    hideButton.setColour(TextButton::ColourIds::textColourOffId, backgroundColour.contrasting(1.0f));//Colours::white);
+
     addAndMakeVisible (propertyPanel);
+	addAndMakeVisible(hideButton);
+	hideButton.addListener(this);
     propertyPanel.getLookAndFeel().setColour (TextEditor::ColourIds::highlightedTextColourId, Colours::black);
 }
 
@@ -104,8 +115,15 @@ CabbagePropertiesPanel::~CabbagePropertiesPanel()
         open->xmlElement  = nullptr;
 
     sectionStates.clear();
+    hideButton.setLookAndFeel (nullptr);
+    propertyPanel.setLookAndFeel (nullptr);
 }
 
+void CabbagePropertiesPanel::buttonClicked(Button *button)
+{
+    hide = true;
+    sendChangeMessage();
+}
 void CabbagePropertiesPanel::saveOpenessState()
 {
     const String name = CabbageWidgetData::getStringProp (widgetData, CabbageIdentifierIds::name);
@@ -164,10 +182,14 @@ void CabbagePropertiesPanel::updateProperties (ValueTree wData)
 void CabbagePropertiesPanel::paint (Graphics& g)
 {
     g.fillAll (backgroundColour.withAlpha (1.f));
+    
+    hideButton.setColour(TextButton::ColourIds::buttonColourId, backgroundColour);
+    hideButton.setColour(TextButton::ColourIds::textColourOffId, backgroundColour.contrasting(1.0f));
 }
 
 void CabbagePropertiesPanel::resized()
 {
+	hideButton.setBounds (getWidth() - 23, -2, 20, 12);
     propertyPanel.setBounds (getLocalBounds().reduced (4));
 }
 
@@ -270,6 +292,7 @@ void CabbagePropertiesPanel::changeListenerCallback (ChangeBroadcaster* source)
 
         sendChangeMessage();    //update code in editor when changes are made...
     }
+	//this->setVisible(false);
 }
 
 void CabbagePropertiesPanel::textPropertyComponentChanged (TextPropertyComponent* comp)
@@ -296,6 +319,13 @@ void CabbagePropertiesPanel::valueChanged (Value& value)
 
     else if (value.refersToSameSourceAs (alphaValue))
         setPropertyByName ("Alpha", value.getValue());
+
+	else if (value.refersToSameSourceAs(innerRadius))
+		setPropertyByName("Inner Radius", value.getValue());
+
+	else if (value.refersToSameSourceAs(outerRadius))
+		setPropertyByName("Outer Radius", value.getValue());
+
 
     else if (value.refersToSameSourceAs (zoomValue))
         setPropertyByName ("Zoom", value.getValue());
@@ -517,7 +547,6 @@ Array<PropertyComponent*> CabbagePropertiesPanel::createColourChoosers (ValueTre
         comps.add (new ColourPropertyComponent ("Tracker", trackerColourString));
         comps.add (new ColourPropertyComponent ("Value Box Colour", textboxColourString));
         comps.add (new ColourPropertyComponent ("Value Box Outline", textboxOutlineColourString));
-
     }
 
     else if (typeOfWidget == "label" || typeOfWidget == "groupbox" || typeOfWidget == "numberbox" || typeOfWidget == "csoundoutput" || typeOfWidget == "textbox")
@@ -830,6 +859,14 @@ Array<PropertyComponent*> CabbagePropertiesPanel::createMiscEditors (ValueTree v
         sliderNumberBoxValue.setValue (CabbageWidgetData::getNumProp (valueTree, CabbageIdentifierIds::valuetextbox));
         sliderNumberBoxValue.addListener (this);
         comps.add (new BooleanPropertyComponent (sliderNumberBoxValue, "Value Box", "Is Visible"));
+
+		innerRadius.setValue(CabbageWidgetData::getNumProp(valueTree, CabbageIdentifierIds::trackerinsideradius));
+		innerRadius.addListener(this);
+		comps.add(new SliderPropertyComponent(innerRadius, "Inner Radius", 0, 1, .01, 1, 1));
+
+		outerRadius.setValue(CabbageWidgetData::getNumProp(valueTree, CabbageIdentifierIds::trackeroutsideradius));
+		outerRadius.addListener(this);
+		comps.add(new SliderPropertyComponent(outerRadius, "Outer Radius", 0, 1, .01, 1, 1));
     }
 
     else if (typeOfWidget == "filebutton")
@@ -946,4 +983,3 @@ Array<PropertyComponent*> CabbagePropertiesPanel::createValueEditors (CabbagePro
     return comps;
 }
 //==============================================================================
-
